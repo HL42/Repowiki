@@ -1,0 +1,19 @@
+{
+  "name": "repowiki-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "marked": "^18.0.5",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.0",
+    "vite": "^5.0.0"
+  }
+}

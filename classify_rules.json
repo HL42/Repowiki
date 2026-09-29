@@ -1,0 +1,37 @@
+{
+  "_comment": "RepoWiki 代码分类规则 — 编辑此文件即可适配你的业务领域，无需改代码。规则按优先级排列，越具体的放越前面。",
+  "domains": [
+    {"keywords": ["order", "订单"], "domain": "订单"},
+    {"keywords": ["delivery", "distribution", "配送", "运力", "dispatch"], "domain": "配送"},
+    {"keywords": ["shop", "store", "门店", "商家", "merchant"], "domain": "门店"},
+    {"keywords": ["receipt", "print", "小票", "打印", "printer"], "domain": "收据"},
+    {"keywords": ["payment", "pay", "refund", "支付", "退款", "tip", "小费"], "domain": "支付"},
+    {"keywords": ["user", "login", "auth", "用户", "登录", "注册", "signup", "verify"], "domain": "用户"},
+    {"keywords": ["stat", "report", "统计", "报表", "看板", "dashboard", "analytics"], "domain": "统计"},
+    {"keywords": ["message", "push", "消息", "通知", "推送", "sms", "email"], "domain": "消息"},
+    {"keywords": ["callback", "notify", "webhook", "回调", "通知"], "domain": "回调"},
+    {"keywords": ["rider", "骑手", "位置", "location", "position"], "domain": "骑手"},
+    {"keywords": ["config", "配置", "setting", "环境", "env"], "domain": "配置"},
+    {"keywords": ["admin", "管理", "后台"], "domain": "管理"},
+    {"keywords": ["marketing", "营销", "campaign", "promotion"], "domain": "营销"},
+    {"keywords": ["review", "评价", "reply", "回复"], "domain": "评价"}
+  ],
+  "layers": [
+    {"keywords": ["handler", "controller", "api"], "layer": "handler"},
+    {"keywords": ["service", "logic", "biz", "usecase"], "layer": "service"},
+    {"keywords": ["model", "entity", "schema", "domain"], "layer": "model"},
+    {"keywords": ["repo", "repository", "dao", "mapper"], "layer": "repository"},
+    {"keywords": ["route", "router"], "layer": "route"},
+    {"keywords": ["sdk", "client", "adapter", "platform"], "layer": "sdk"},
+    {"keywords": ["callback", "notify", "webhook"], "layer": "callback"},
+    {"keywords": ["job", "cron", "task", "schedule"], "layer": "job"},
+    {"keywords": ["config", "cfg", "setting", "etc"], "layer": "config"},
+    {"keywords": ["util", "helper", "common", "lib"], "layer": "util"},
+    {"keywords": ["page", "pages", "view", "views"], "layer": "page"},
+    {"keywords": ["component", "components", "widget"], "layer": "component"},
+    {"keywords": ["store", "state", "vuex", "pinia"], "layer": "store"},
+    {"keywords": ["rpc", "proto", "grpc"], "layer": "api"},
+    {"keywords": ["middleware", "interceptor", "filter"], "layer": "middleware"},
+    {"keywords": ["docs", "doc", "readme"], "layer": "documentation"}
+  ]
+}
