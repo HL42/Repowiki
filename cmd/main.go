@@ -18,30 +18,20 @@ import (
 )
 
 func main() {
-	apiKey := os.Getenv("DEEPSEEK_API_KEY")
-
-	if apiKey == "" {
-
-		if data, err := os.ReadFile(".env"); err == nil {
-
-			apiKey = parseEnvValue(string(data), "DEEPSEEK_API_KEY")
-		}
+	// 读取 .env（若存在）作为环境变量的回退，让 PORT/MODEL/WIKI_ROOT 也能从 .env 配置
+	var dotEnv string
+	if data, err := os.ReadFile(".env"); err == nil {
+		dotEnv = string(data)
 	}
 
+	apiKey := getConfig("DEEPSEEK_API_KEY", dotEnv, "")
 	if apiKey == "" {
-
 		log.Fatal("请设置环境变量 DEEPSEEK_API_KEY 或在项目根目录创建 .env 文件")
 	}
 
-	model := os.Getenv("DEEPSEEK_MODEL")
-	if model == "" {
-		model = "deepseek-chat"
-	}
+	model := getConfig("DEEPSEEK_MODEL", dotEnv, "deepseek-chat")
 
-	wikiRoot := os.Getenv("WIKI_ROOT")
-	if wikiRoot == "" {
-		wikiRoot = "./knowledge-base"
-	}
+	wikiRoot := getConfig("WIKI_ROOT", dotEnv, "./knowledge-base")
 
 	// 初始化存储
 	fs, err := storage.NewFileSystem(wikiRoot)
@@ -100,10 +90,7 @@ func main() {
 	}
 
 	// 默认：启动 HTTP 服务
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
+	port := getConfig("PORT", dotEnv, "8080")
 
 	// 启动前检查端口是否被占用
 	if conn, err := net.DialTimeout("tcp", ":"+port, 200*time.Millisecond); err == nil {
@@ -154,6 +141,17 @@ func main() {
 		log.Fatalf("关闭失败: %v", err)
 	}
 	fmt.Println("服务已安全关闭")
+}
+
+// getConfig 按优先级取配置：环境变量 > .env 文件 > 默认值
+func getConfig(key, dotEnv, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	if v := parseEnvValue(dotEnv, key); v != "" {
+		return v
+	}
+	return def
 }
 
 // parseEnvValue 从 .env 文件内容中解析 key 对应的值
