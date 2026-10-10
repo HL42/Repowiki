@@ -47,6 +47,10 @@ func (h *IngestHandler) HandleIngest(w http.ResponseWriter, r *http.Request) {
 
 	successCount, errs := engine.IngestAll(r.Context(), req.RawPath)
 
+	// IngestAll 清的是叶子引擎自己的缓存，而缓存挂在根引擎上：
+	// 不在这里补一次，新导入的文档要等重启服务才检索得到
+	h.Engine.InvalidateCaches()
+
 	resp := map[string]interface{}{
 		"success": successCount,
 	}

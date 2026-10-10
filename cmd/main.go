@@ -7,34 +7,60 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"repowiki/internal/api"
+	"repowiki/internal/config"
 	"repowiki/internal/llm"
 	"repowiki/internal/storage"
 	"repowiki/internal/wiki"
 )
 
+// Version 由构建时注入（-X main.Version=v1.2.3），未注入时为 dev
+var Version = "dev"
+
 func main() {
-	// 读取 .env（若存在）作为环境变量的回退，让 PORT/MODEL/WIKI_ROOT 也能从 .env 配置
-	var dotEnv string
-	if data, err := os.ReadFile(".env"); err == nil {
-		dotEnv = string(data)
+	args := os.Args[1:]
+
+	// 信息类参数最先处理：不读 .env、不加载配置，输出保持干净
+	noOpen := false
+	var portFile string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--version", "-v":
+			fmt.Printf("repowiki %s\n", Version)
+			return
+		case "--help", "-h":
+			printUsage()
+			return
+		case "--no-open", "--no-browser":
+			noOpen = true
+		case "--port-file":
+			// 供 macOS 原生壳使用：绑定成功后把实际端口写进该文件，壳据此拼 URL
+			if i+1 < len(args) {
+				portFile = args[i+1]
+				i++
+			}
+		}
 	}
 
-	apiKey := getConfig("DEEPSEEK_API_KEY", dotEnv, "")
-	if apiKey == "" {
-		log.Fatal("请设置环境变量 DEEPSEEK_API_KEY 或在项目根目录创建 .env 文件")
+	// 读取配置（环境变量 > .env 文件 > 默认值），并定位打包资源目录
+	settings := config.Load()
+	resourceDir := config.ResourceDir()
+
+	// 未配置 Key 不再致命退出：首次启动在浏览器里引导用户填写（见 /api/config）
+	if settings.APIKey == "" {
+		log.Printf("未配置 DeepSeek API Key，启动后请在浏览器引导页中填写（或创建 .env 文件）")
 	}
-
-	model := getConfig("DEEPSEEK_MODEL", dotEnv, "deepseek-chat")
-
-	wikiRoot := getConfig("WIKI_ROOT", dotEnv, "./knowledge-base")
 
 	// 初始化存储
-	fs, err := storage.NewFileSystem(wikiRoot)
+	fs, err := storage.NewFileSystem(settings.WikiRoot)
 	if err != nil {
 		log.Fatalf("初始化文件系统失败: %v", err)
 	}
@@ -42,11 +68,11 @@ func main() {
 		log.Fatalf("初始化 Wiki 失败: %v", err)
 	}
 
-	// 初始化 LLM 客户端
-	llmClient := llm.NewDeepSeekClient(apiKey, model)
+	// 初始化 LLM 客户端（可能暂为空 Key，运行期可通过 /api/config 更新）
+	llmClient := llm.NewDeepSeekClient(settings.APIKey, settings.Model)
 
-	// 初始化引擎（复用已创建的 FileSystem，避免重复示例化）
-	engine := wiki.NewEngine(llmClient, wikiRoot, fs)
+	// 初始化引擎（复用已创建的 FileSystem，避免重复实例化）
+	engine := wiki.NewEngine(llmClient, settings.WikiRoot, fs)
 
 	// 启动时从磁盘全量构建搜索索引
 	fmt.Println("构建搜索索引...")
@@ -54,54 +80,87 @@ func main() {
 		log.Printf("索引构建失败（不影响运行）: %v", err)
 	}
 
-	// 子命令分发
-	args := os.Args[1:]
-	if len(args) >= 1 && args[0] == "ingest" {
-		dirPath := "."
-		if len(args) >= 2 {
-			dirPath = args[1]
-		}
-		fmt.Printf("开始导入: %s\n", dirPath)
-		successCount, errs := engine.IngestAll(context.Background(), dirPath)
-		fmt.Printf("导入完成: 成功 %d 个\n", successCount)
-		for _, e := range errs {
-			fmt.Printf("  ! %v\n", e)
-		}
-		return
-	}
+	// 子命令分发（ingest / cleanup-stubs 仍保留 CLI 用法）
+	if len(args) >= 1 {
+		switch args[0] {
+		case "ingest":
+			if settings.APIKey == "" {
+				log.Printf("警告：未配置 API Key，ingest 会失败；请先设置 DEEPSEEK_API_KEY")
+			}
+			dirPath := "."
+			if len(args) >= 2 {
+				dirPath = args[1]
+			}
+			fmt.Printf("开始导入: %s\n", dirPath)
+			successCount, errs := engine.IngestAll(context.Background(), dirPath)
+			fmt.Printf("导入完成: 成功 %d 个\n", successCount)
+			for _, e := range errs {
+				fmt.Printf("  ! %v\n", e)
+			}
+			return
 
-	if len(args) >= 1 && args[0] == "cleanup-stubs" {
-		dryRun := len(args) >= 2 && args[1] == "--dry-run"
-		if dryRun {
-			fmt.Println("预览将删除的空壳 entity/concept 页：")
-		} else {
-			fmt.Println("清理空壳 entity/concept 页...")
+		case "cleanup-stubs":
+			dryRun := len(args) >= 2 && args[1] == "--dry-run"
+			if dryRun {
+				fmt.Println("预览将删除的空壳 entity/concept 页：")
+			} else {
+				fmt.Println("清理空壳 entity/concept 页...")
+			}
+			n, err := engine.CleanupStubPages(dryRun)
+			if err != nil {
+				log.Fatalf("清理失败: %v", err)
+			}
+			if dryRun {
+				fmt.Printf("共 %d 个空壳页可删除（确认后去掉 --dry-run 执行）\n", n)
+			} else {
+				fmt.Printf("已删除 %d 个空壳页\n", n)
+			}
+			return
+
+		default:
+			if !strings.HasPrefix(args[0], "-") {
+				fmt.Fprintf(os.Stderr, "未知参数: %s\n\n", args[0])
+				printUsage()
+				os.Exit(2)
+			}
 		}
-		n, err := engine.CleanupStubPages(dryRun)
-		if err != nil {
-			log.Fatalf("清理失败: %v", err)
-		}
-		if dryRun {
-			fmt.Printf("共 %d 个空壳页可删除（确认后去掉 --dry-run 执行）\n", n)
-		} else {
-			fmt.Printf("已删除 %d 个空壳页\n", n)
-		}
-		return
 	}
 
 	// 默认：启动 HTTP 服务
-	port := getConfig("PORT", dotEnv, "8080")
+	// 仅监听本机回环地址：本工具定位为「下载到本地个人使用」，
+	// 不暴露到局域网（目录浏览接口会列出本机磁盘，必须限制访问来源）
+	const host = "127.0.0.1"
 
-	// 启动前检查端口是否被占用
-	if conn, err := net.DialTimeout("tcp", ":"+port, 200*time.Millisecond); err == nil {
-		conn.Close()
-		fmt.Printf("警告：端口 %s 已被占用，请先关闭占用该端口的进程后重试\n", port)
-		log.Fatalf("端口 %s 已被占用，无法启动", port)
+	// 用真实的监听来绑定端口：被占用时自动换一个空闲端口，
+	// 而不是像旧版那样报错退出（用户浏览器里则可能打开到占用端口的其它服务）
+	ln, err := net.Listen("tcp", net.JoinHostPort(host, settings.Port))
+	if err != nil {
+		log.Printf("端口 %s 不可用，自动改用随机空闲端口", settings.Port)
+		ln, err = net.Listen("tcp", net.JoinHostPort(host, "0"))
+		if err != nil {
+			log.Fatalf("无法监听回环地址: %v", err)
+		}
+	}
+	settings.Port = strconv.Itoa(ln.Addr().(*net.TCPAddr).Port)
+
+	// 把实际端口写给 macOS 原生壳（--port-file 指定）
+	if portFile != "" {
+		if err := os.WriteFile(portFile, []byte(settings.Port+"\n"), 0600); err != nil {
+			log.Printf("写入端口文件失败（忽略）: %v", err)
+		}
 	}
 
-	handler := api.NewServer(engine)
+	// 运行期改 Key 时的落盘实现：把当前生效配置（含最终端口）写回 .env
+	saveConfig := func(apiKey, model string) error {
+		s := settings
+		s.APIKey = apiKey
+		s.Model = model
+		return config.SaveEnv(s)
+	}
+
+	handler := api.NewServer(engine, llmClient, saveConfig, resourceDir)
 	srv := &http.Server{
-		Addr:    ":" + port,
+		Addr:    net.JoinHostPort(host, settings.Port),
 		Handler: handler,
 	}
 
@@ -111,27 +170,33 @@ func main() {
 
 	go func() {
 		fmt.Println("========================================")
-		fmt.Println("  RepoWiki 已启动")
+		fmt.Printf("  RepoWiki %s 已启动\n", Version)
 		fmt.Println("========================================")
 		fmt.Println()
-		fmt.Println("API 端点:")
-		fmt.Println("  POST /api/ingest      - 导入文档")
-		fmt.Println("  POST /api/query       - 知识问答")
-		fmt.Println("  POST /api/synthesize  - 综合提炼")
-		fmt.Println("  GET  /api/stats       - 知识库统计")
-		fmt.Println()
-		fmt.Println("命令行:")
-		fmt.Println("  go run cmd/main.go ingest /path/to/docs  - 离线导入")
-		fmt.Println()
-		fmt.Printf("监听端口: %s\n", port)
-		if _, err := os.Stat("./frontend/dist"); err == nil {
-			fmt.Println("Web UI: http://localhost:" + port + "/")
+		fmt.Printf("监听地址: http://%s\n", srv.Addr)
+		if resourceDir != "" {
+			fmt.Println("资源目录: " + resourceDir)
 		}
+		if settings.WikiRoot != "" {
+			fmt.Println("数据目录: " + settings.WikiRoot)
+		}
+		if settings.APIKey == "" {
+			fmt.Println("提示：尚未配置 API Key，浏览器会打开引导页引导填写。")
+		}
+		fmt.Println()
 
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("服务启动失败: %v", err)
 		}
 	}()
+
+	// 服务真正监听后（ln 已就绪）再打开浏览器，URL 用实际绑定地址
+	if !noOpen {
+		go func() {
+			time.Sleep(400 * time.Millisecond)
+			openBrowser("http://" + srv.Addr + "/")
+		}()
+	}
 
 	<-quit
 	fmt.Println("\n正在关闭服务...")
@@ -143,65 +208,43 @@ func main() {
 	fmt.Println("服务已安全关闭")
 }
 
-// getConfig 按优先级取配置：环境变量 > .env 文件 > 默认值
-func getConfig(key, dotEnv, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+// openBrowser 用系统默认浏览器打开 URL。
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	default:
+		return
 	}
-	if v := parseEnvValue(dotEnv, key); v != "" {
-		return v
-	}
-	return def
+	_ = cmd.Start()
 }
 
-// parseEnvValue 从 .env 文件内容中解析 key 对应的值
-func parseEnvValue(content, key string) string {
-	prefix := key + "="
-	for _, line := range splitLines(content) {
-		line = trimLine(line)
-		if len(line) >= len(prefix) && line[:len(prefix)] == prefix {
-			val := line[len(prefix):]
-			// 去掉可能的引号
-			if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') ||
-				(val[0] == '\'' && val[len(val)-1] == '\'')) {
-				val = val[1 : len(val)-1]
-			}
-			return val
-		}
-	}
-	return ""
-}
+// printUsage 打印命令行用法
+func printUsage() {
+	fmt.Print(`RepoWiki - 代码库知识库
 
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
-}
+用法:
+  repowiki [子命令] [参数]
 
-func trimLine(s string) string {
-	// 去除首尾空白
-	start, end := 0, len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\t' || s[start] == '\r') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\t' || s[end-1] == '\r') {
-		end--
-	}
-	if start > 0 || end < len(s) {
-		s = s[start:end]
-	}
-	// 跳过注释行
-	if len(s) > 0 && s[0] == '#' {
-		return ""
-	}
-	return s
+子命令:
+  （无）                    启动 Web 服务并自动打开浏览器
+  ingest <目录>             离线导入指定目录的代码/文档
+  cleanup-stubs [--dry-run] 清理空壳 entity/concept 页
+
+选项:
+  -h, --help                显示本帮助
+  -v, --version             显示版本号
+  --no-open                 启动服务但不自动打开浏览器
+
+配置（环境变量 > .env 文件 > 默认值）:
+  DEEPSEEK_API_KEY  可选，DeepSeek API Key（也可在网页引导页填写）
+  DEEPSEEK_MODEL    可选，默认 deepseek-chat
+  PORT              可选，默认 8080（被占用时自动换空闲端口）
+  WIKI_ROOT         可选，默认 ./knowledge-base（打包后为系统用户数据目录）
+`)
 }

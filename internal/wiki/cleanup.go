@@ -41,7 +41,7 @@ func (e *Engine) CleanupStubPages(dryRun bool) (int, error) {
 	}
 	if !dryRun && deleted > 0 {
 		e.regenerateIndex()
-		e.invalidateCaches()
+		e.InvalidateCaches()
 	}
 	return deleted, nil
 }

@@ -39,6 +39,8 @@ func (h *SynthesizeHandler) HandleSynthesize(w http.ResponseWriter, r *http.Requ
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// 新生成的综合页同样要立刻可检索（缓存挂在根引擎上）
+	h.Engine.InvalidateCaches()
 
 	writeJSON(w, resp)
 }

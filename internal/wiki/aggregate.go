@@ -18,11 +18,11 @@ func (e *Engine) generateCodeAggregatePages() {
 
 	// 收集所有代码页面的分类信息
 	type codePage struct {
-		slug    string // 文件名（不含 .md）
-		title   string // 来源页标题
-		layer   string
-		domain  string
-		kind    string
+		slug   string // 文件名（不含 .md）
+		title  string // 来源页标题
+		layer  string
+		domain string
+		kind   string
 	}
 
 	// domain → layer → []page

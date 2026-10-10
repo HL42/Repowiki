@@ -105,11 +105,12 @@ func loadClassifyRules() ([]classifyDomainRule, []classifyLayerRule) {
 			}
 			var cfg classifyRulesConfig
 			if err := json.Unmarshal(data, &cfg); err != nil {
-				fmt.Printf("[WARN] classify_rules.json 解析失败: %v，使用默认规则\n", err)
+				fmt.Fprintf(os.Stderr, "[WARN] classify_rules.json 解析失败: %v，使用默认规则\n", err)
 				return defaultDomainRules, defaultLayerRules
 			}
 			if len(cfg.Domains) > 0 || len(cfg.Layers) > 0 {
-				fmt.Printf("[INFO] 已加载分类规则: classify_rules.json (%d 域, %d 层)\n",
+				// 诊断信息走 stderr，避免污染 stdout（如 `repowiki --version` 的输出）
+				fmt.Fprintf(os.Stderr, "[INFO] 已加载分类规则: classify_rules.json (%d 域, %d 层)\n",
 					len(cfg.Domains), len(cfg.Layers))
 				if len(cfg.Domains) == 0 {
 					cfg.Domains = defaultDomainRules

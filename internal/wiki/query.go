@@ -31,10 +31,10 @@ func (e *Engine) Query(ctx context.Context, question string, history []ChatMessa
 	allChunks := e.multiRetrieve(subQuestions)
 	if len(allChunks) == 0 {
 		return &QueryResponse{
-			Answer:        "知识库中暂无相关信息。",
-			Confidence:    "low",
-			SourcePages:   []string{},
-			Citations:     []SourceCitation{},
+			Answer:         "知识库中暂无相关信息。",
+			Confidence:     "low",
+			SourcePages:    []string{},
+			Citations:      []SourceCitation{},
 			RefinedQueries: refined,
 		}, nil
 	}

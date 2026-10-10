@@ -8,11 +8,11 @@ func TestShouldSkipEntityConcept(t *testing.T) {
 		category string
 		want     bool
 	}{
-		{"/Users/hl/ai_wiki/docs/team-standards/git-branch-management/index.md", "guide", true},
-		{"/Users/hl/ai_wiki/sop.md", "guide", true},
-		{"/Users/hl/ai_wiki/docs/team-standards/core-development-standards.md", "technical", true},
-		{"/Users/hl/project/docs/prd/feat-1001.md", "report", true},
-		{"/Users/hl/project/src/service/order.js", "", false},
+		{"/Users/me/ai_wiki/docs/team-standards/git-branch-management/index.md", "guide", true},
+		{"/Users/me/ai_wiki/sop.md", "guide", true},
+		{"/Users/me/ai_wiki/docs/team-standards/core-development-standards.md", "technical", true},
+		{"/Users/me/project/docs/prd/feat-1001.md", "report", true},
+		{"/Users/me/project/src/service/order.js", "", false},
 	}
 	for _, c := range cases {
 		if got := shouldSkipEntityConcept(c.path, c.category); got != c.want {
@@ -22,7 +22,7 @@ func TestShouldSkipEntityConcept(t *testing.T) {
 }
 
 func TestArchiveSlug(t *testing.T) {
-	got := archiveSlug("/Users/hl/ai_wiki/docs/team-standards/git-branch-management/index.md")
+	got := archiveSlug("/Users/me/ai_wiki/docs/team-standards/git-branch-management/index.md")
 	want := "git-branch-management-index"
 	if got != want {
 		t.Errorf("archiveSlug = %q, want %q", got, want)

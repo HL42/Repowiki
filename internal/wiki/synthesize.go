@@ -122,7 +122,7 @@ tags: [矛盾, %s]
 	}
 
 	e.regenerateIndex()
-	e.invalidateCaches()
+	e.InvalidateCaches()
 
 	e.Storage.AppendLog(fmt.Sprintf("## Synthesize - %s\n- 时间: %s\n- 相关页: %d\n- 矛盾: %d\n- 空白: %d",
 		topic, now, len(relevantPaths), len(result.Conflicts), len(result.Gaps)))

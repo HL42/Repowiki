@@ -29,11 +29,11 @@ func TestChunkMarkdown_SplitOnMaxChars(t *testing.T) {
 
 func TestDetectLanguage(t *testing.T) {
 	cases := map[string]string{
-		"main.go":    "go",
-		"app.py":     "python",
-		"index.js":   "javascript",
-		"App.vue":    "vue",
-		"readme.md":  "markdown",
+		"main.go":     "go",
+		"app.py":      "python",
+		"index.js":    "javascript",
+		"App.vue":     "vue",
+		"readme.md":   "markdown",
 		"unknown.txt": "",
 	}
 	for file, want := range cases {

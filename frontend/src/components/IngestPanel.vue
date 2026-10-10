@@ -63,7 +63,7 @@
       <!-- 新建子项目 -->
       <div v-if="showNewSub" class="card new-sub-form">
         <h4>新建子项目</h4>
-        <input v-model="newSubName" class="form-input" placeholder="例：yl-order-service"
+        <input v-model="newSubName" class="form-input" placeholder="例：order-service"
           style="margin-bottom:10px" />
         <div class="form-actions">
           <button class="btn-primary" @click="createSub" :disabled="!newSubName.trim()">创建并继续</button>
@@ -82,7 +82,8 @@
           <label class="form-label">文档目录路径</label>
           <div class="input-wrap">
             <input v-model="path" class="form-input ingest-input"
-              placeholder="/Users/hl/yl-order-service 或代码目录" @keydown.enter="doIngest" />
+              placeholder="例如：~/my-project 或代码目录" @keydown.enter="doIngest" />
+            <button type="button" class="btn-browse" @click="openBrowser">浏览文件夹…</button>
             <button class="btn-primary ingest-btn" @click="doIngest" :disabled="loading">
               {{ loading ? '导入中...' : '开始导入' }}
             </button>
@@ -109,6 +110,43 @@
           </div>
         </div>
         <div v-if="error" class="error-banner">{{ error }}</div>
+      </div>
+    </div>
+
+    <!-- 文件夹选择器（走后端 /api/browse-dir，浏览器无法直接拿到绝对路径） -->
+    <div v-if="showBrowser" class="modal-mask" @click.self="showBrowser = false">
+      <div class="modal-box">
+        <div class="modal-head">
+          <span class="modal-title">选择文档目录</span>
+          <button type="button" class="modal-close" @click="showBrowser = false">×</button>
+        </div>
+
+        <div class="modal-path" :title="browsePath">{{ browsePath || '加载中…' }}</div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-back" @click="browseTo(browseParent)" :disabled="!browseParent">↑ 上级目录</button>
+          <button type="button" class="btn-back" @click="browseHome">🏠 主目录</button>
+          <span v-if="browseTruncated" class="modal-warn">条目过多，仅显示部分</span>
+        </div>
+
+        <div class="modal-list">
+          <div v-for="d in browseDirs" :key="d.path" class="browse-row dir" @click="browseTo(d.path)">
+            <span class="browse-icon">📁</span><span class="browse-name">{{ d.name }}</span>
+          </div>
+          <div v-for="f in browseFiles" :key="f.path" class="browse-row file">
+            <span class="browse-icon">📄</span><span class="browse-name">{{ f.name }}</span>
+          </div>
+          <div v-if="!browseDirs.length && !browseFiles.length" class="browse-empty">
+            {{ browseLoading ? '读取中…' : '该目录下没有子目录或文件' }}
+          </div>
+        </div>
+
+        <div v-if="browseError" class="error-banner">{{ browseError }}</div>
+
+        <div class="modal-foot">
+          <button type="button" class="btn-primary" @click="pickCurrent" :disabled="!browsePath">选择此文件夹</button>
+          <button type="button" class="btn-link" @click="showBrowser = false">取消</button>
+        </div>
       </div>
     </div>
   </div>
@@ -196,6 +234,53 @@ export default {
       }
     }
 
+    // ---------- 文件夹选择器 ----------
+    const showBrowser = ref(false)
+    const browsePath = ref('')
+    const browseParent = ref('')
+    const browseDirs = ref([])
+    const browseFiles = ref([])
+    const browseTruncated = ref(false)
+    const browseLoading = ref(false)
+    const browseError = ref('')
+
+    async function browseTo(target) {
+      browseLoading.value = true; browseError.value = ''
+      try {
+        const data = await api.browseDir(target || '')
+        browsePath.value = data.path
+        browseParent.value = data.parent || ''
+        browseDirs.value = data.dirs || []
+        browseFiles.value = data.files || []
+        browseTruncated.value = !!data.truncated
+      } catch (e) {
+        browseError.value = '读取目录失败: ' + e.message
+      }
+      browseLoading.value = false
+    }
+
+    async function openBrowser() {
+      showBrowser.value = true
+      const start = path.value.trim()
+      if (start) {
+        await browseTo(start)
+        // 手填的路径可能不存在，退回主目录而不是停在报错态
+        if (browseError.value) await browseTo('')
+      } else {
+        await browseTo('')
+      }
+    }
+
+    function browseHome() {
+      browseTo('')
+    }
+
+    function pickCurrent() {
+      if (!browsePath.value) return
+      path.value = browsePath.value
+      showBrowser.value = false
+    }
+
     async function doIngest() {
       if (!path.value.trim()) return
       loading.value = true; error.value = ''; result.value = null
@@ -214,7 +299,10 @@ export default {
     return { step, projects, selectedProject, selectedSub, path, loading, result, error, loaded,
              showNewProj, newProjName, newProjDesc, creating, createMsg, createOk,
              subProjects, loadedSubs, showNewSub, newSubName,
-             selectProject, createProj, createSub, doIngest, truncatedDesc }
+             showBrowser, browsePath, browseParent, browseDirs, browseFiles,
+             browseTruncated, browseLoading, browseError,
+             selectProject, createProj, createSub, doIngest, truncatedDesc,
+             openBrowser, browseTo, browseHome, pickCurrent }
   },
 }
 </script>
@@ -275,6 +363,30 @@ export default {
 .ingest-input:focus { outline: none; box-shadow: none; }
 .ingest-btn { border-radius: 0; padding: 11px 24px; flex-shrink: 0; }
 .form-hint { margin-top: 6px; font-size: 12px; color: var(--color-text-muted); line-height: 1.5; }
+.btn-browse { border: none; border-left: 1px solid var(--color-border); background: #f8fafc; padding: 0 16px; font-size: 13px; color: var(--color-text-secondary); cursor: pointer; font-family: inherit; flex-shrink: 0; }
+.btn-browse:hover { background: var(--color-accent-light); color: var(--color-accent); }
+
+/* 文件夹选择器 */
+.modal-mask { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 24px; }
+.modal-box { background: #fff; border-radius: 10px; width: 100%; max-width: 620px; max-height: 80vh; display: flex; flex-direction: column; padding: 20px; box-shadow: 0 20px 50px rgba(15,23,42,0.25); }
+.modal-head { display: flex; align-items: center; margin-bottom: 12px; }
+.modal-title { flex: 1; font-size: 16px; font-weight: 700; }
+.modal-close { background: none; border: none; font-size: 22px; line-height: 1; color: var(--color-text-muted); cursor: pointer; padding: 0 4px; }
+.modal-close:hover { color: var(--color-text); }
+.modal-path { font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--color-text-secondary); background: #f8fafc; border: 1px solid var(--color-border); border-radius: 6px; padding: 8px 10px; word-break: break-all; margin-bottom: 10px; }
+.modal-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.modal-actions .btn-back { margin-bottom: 0; }
+.modal-actions .btn-back:disabled { opacity: 0.45; cursor: not-allowed; }
+.modal-warn { font-size: 12px; color: #d97706; }
+.modal-list { flex: 1; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 6px; min-height: 180px; }
+.browse-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 13.5px; border-bottom: 1px solid #f1f5f9; }
+.browse-row.dir { cursor: pointer; }
+.browse-row.dir:hover { background: var(--color-accent-light); }
+.browse-row.file { color: var(--color-text-muted); }
+.browse-icon { font-size: 15px; }
+.browse-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browse-empty { padding: 28px; text-align: center; color: var(--color-text-muted); font-size: 13px; }
+.modal-foot { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
 
 .ingest-result { margin-top: 20px; }
 .result-header { padding: 12px 16px; font-size: 14px; font-weight: 600; border-radius: 6px; }

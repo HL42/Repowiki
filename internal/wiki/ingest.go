@@ -23,13 +23,13 @@ func (e *Engine) IngestAll(ctx context.Context, dirPath string) (int, []error) {
 		}
 		name := info.Name()
 		if info.IsDir() {
-		// 跳过隐藏目录和噪声目录
-		if strings.HasPrefix(name, ".") && name != "." {
-			return filepath.SkipDir
-		}
-		if noiseDirNames[name] {
-			return filepath.SkipDir
-		}
+			// 跳过隐藏目录和噪声目录
+			if strings.HasPrefix(name, ".") && name != "." {
+				return filepath.SkipDir
+			}
+			if noiseDirNames[name] {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
@@ -67,7 +67,7 @@ func (e *Engine) IngestAll(ctx context.Context, dirPath string) (int, []error) {
 	defer func() {
 		e.regenerateIndex()
 		e.generateCodeAggregatePages()
-		e.invalidateCaches()
+		e.InvalidateCaches()
 	}()
 
 	// Maximum 3 concurrent requests

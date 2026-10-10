@@ -1,0 +1,65 @@
+name: Release
+
+# 推送 v* 标签即触发，例如: git tag v0.1.0 && git push origin v0.1.0
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # .dmg 与 .app 需要 hdiutil，只在 macOS 上可构建；
+    # Windows exe 与 darwin 二进制均可用 CGO_ENABLED=0 交叉编译，故单机即可完成三平台。
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 构建三平台安装包
+        run: bash scripts/build.sh "${{ github.ref_name }}"
+
+      - name: 校验产物
+        run: ls -lh release/*/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*/*.dmg
+            release/*/*.zip
+          generate_release_notes: true
+          body: |
+            ## 下载
+
+            | 平台 | 文件 |
+            | --- | --- |
+            | macOS（Apple Silicon / M 系列） | `RepoWiki-${{ github.ref_name }}-arm64.dmg` |
+            | macOS（Intel） | `RepoWiki-${{ github.ref_name }}-amd64.dmg` |
+            | Windows（x64） | `repowiki-${{ github.ref_name }}-windows-amd64.zip` |
+
+            ## 安装
+
+            1. **macOS**：双击 `.dmg` → 把 `RepoWiki.app` 拖进「应用程序」→ 双击打开（独立原生窗口）；
+               **Windows**：解压 `zip` → 双击 `repowiki.exe`（自动用浏览器打开）；
+            2. 打开后左侧「快速开始」有分步引导；
+            3. 第一次使用时在页面里粘贴你的 DeepSeek API Key（[免费注册](https://platform.deepseek.com)），保存即生效，无需碰终端；
+            4. 想先试手感，可在「导入文档」里直接导入包内自带的示例项目 `examples/order-service`。
+
+            > **macOS 提示「无法验证开发者」？** 安装包未做代码签名（Apple 签名需付费账号）。
+            > 首次打开 `RepoWiki.app` 时：右键 → 打开 → 确认即可。
+            >
+            > **Windows SmartScreen 已阻止？** 点「更多信息」→「仍要运行」。
+
+            程序只监听 `127.0.0.1`，不对外网暴露；API Key 与知识库数据保存在本机用户数据目录。

@@ -409,9 +409,14 @@ func buildSubProjectSummary(subInfos []SubProjectInfo) string {
 	return strings.Join(parts, "\n")
 }
 
-// invalidateCaches 导入/删除后使检索与 lint 缓存失效
-// 同时清空项目/子项目引擎缓存，确保下次请求使用最新数据重建索引
-func (e *Engine) invalidateCaches() {
+// InvalidateCaches 导入/删除后使检索与 lint 缓存失效，
+// 同时清空项目/子项目引擎缓存，确保下次请求使用最新数据重建索引。
+//
+// 注意：引擎是逐层缓存的（根引擎 → 项目引擎 → 子项目引擎），而真正执行
+// 导入/删除的往往是叶子引擎，缓存却挂在根引擎上。只清叶子自己的缓存等于
+// 没清——下一次查询仍会命中导入前建好的旧索引，表现为「刚导入的内容搜不到、
+// 重启服务后才能搜到」。因此调用方必须在**根引擎**上执行本方法。
+func (e *Engine) InvalidateCaches() {
 	e.chunkMu.Lock()
 	e.chunkCache = nil
 	e.chunkMu.Unlock()

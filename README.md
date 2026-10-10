@@ -18,23 +18,39 @@ Import your code and docs → let the LLM read and organize them → ask questio
 
 ### Download (release binary)
 
-Download the installer for your platform from [Releases](https://github.com/HL42/Repowiki/releases):
+Download the installer for your platform from [Releases](https://github.com/HL42/Repowiki/releases) (example version: `v0.1.0`):
 
-- **macOS Apple Silicon**: `repowiki-{version}-darwin-arm64.zip`
-- **macOS Intel**: `repowiki-{version}-darwin-amd64.zip`
-- **Windows**: `repowiki-{version}-windows-amd64.zip`
+- **macOS Apple Silicon**: `RepoWiki-v0.1.0-arm64.dmg`
+- **macOS Intel**: `RepoWiki-v0.1.0-amd64.dmg`
+- **Windows x64**: `repowiki-v0.1.0-windows-amd64.zip`
 
-Unzip, then double-click `start.command` (macOS) or `start.bat` (Windows). On first run, enter your [DeepSeek API Key](https://platform.deepseek.com) — the browser opens automatically.
+**Install**
+
+- **macOS**: open the `.dmg` → drag `RepoWiki.app` into **Applications** → double-click it — it opens in its **own native window** (no browser);
+- **Windows**: unzip the archive → double-click `repowiki.exe` (no console window) — it opens in your default browser.
+
+The **Quick Start** tab walks you through the rest. **On first run, paste your [DeepSeek API Key](https://platform.deepseek.com/api_keys) right in the page** — it's validated and saved instantly, no terminal needed. If the default port is busy the app picks a free one automatically, so the URL is always correct.
+
+To try it out, import the bundled sample project `examples/order-service` from the **Import** tab.
+
+> **macOS says "cannot verify the developer"?** The app isn't code-signed (an Apple certificate requires a paid account). First launch: **right-click `RepoWiki.app` → Open → confirm**.
+>
+> **Windows SmartScreen blocked it?** Click **More info** → **Run anyway**.
+
+The server listens on `127.0.0.1` **only** — never on your LAN or the internet. It also validates the `Host` and `Origin` headers and rejects non-local origins, so an arbitrary web page you happen to visit can't reach the API (which can list local directories and read files). Your API key and knowledge-base data live in the user data directory (macOS `~/Library/Application Support/RepoWiki`, Windows `%APPDATA%\RepoWiki`).
 
 ### From source
 
 ```bash
 git clone https://github.com/HL42/Repowiki.git
 cd Repowiki
-echo 'DEEPSEEK_API_KEY=sk-your-key' > .env
+echo 'DEEPSEEK_API_KEY=sk-your-key' > .env   # or leave empty and fill it in the browser on first run
 go build -o repowiki ./cmd/... && ./repowiki
-# open http://localhost:8080
+# opens http://127.0.0.1:8080 automatically
 ```
+
+If `frontend/dist` is missing, build it once: `cd frontend && npm install && npm run build`.
+Use `./repowiki --version` for the version, `./repowiki --help` for CLI usage, and `./repowiki --no-open` to start without opening a browser.
 
 ## What it does
 

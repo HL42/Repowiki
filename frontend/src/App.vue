@@ -4,7 +4,7 @@
     <aside class="sidebar">
       <div class="sidebar-brand">
         <span class="brand-title">RepoWiki</span>
-        <span class="brand-sub">公司知识库</span>
+        <span class="brand-sub">本地知识库</span>
       </div>
 
       <nav class="sidebar-nav">
@@ -70,6 +70,14 @@
       <StatsPanel v-else-if="activeTab === 'stats'" key="stats" />
       <IngestPanel v-else-if="activeTab === 'ingest'" key="ingest" @done="onIngestDone" />
       <LintPanel v-else-if="activeTab === 'lint'" key="lint" :currentProject="currentProject" @done="onLintDone" />
+      <GuidePanel
+        v-else-if="activeTab === 'guide'"
+        key="guide"
+        :stats="stats"
+        @go="activeTab = $event"
+        @ask="showAIPanel = true"
+        @configured="onConfigured"
+      />
     </main>
 
     <!-- 右侧 AI 问答面板（可滑入/滑出） -->
@@ -95,10 +103,11 @@ import SynthesizePanel from './components/SynthesizePanel.vue'
 import StatsPanel from './components/StatsPanel.vue'
 import IngestPanel from './components/IngestPanel.vue'
 import LintPanel from './components/LintPanel.vue'
+import GuidePanel from './components/GuidePanel.vue'
 import api from './api.js'
 
 export default {
-  components: { WikiBrowser, QueryPanel, ProjectBanner, ProjectDetail, SynthesizePanel, StatsPanel, IngestPanel, LintPanel },
+  components: { WikiBrowser, QueryPanel, ProjectBanner, ProjectDetail, SynthesizePanel, StatsPanel, IngestPanel, LintPanel, GuidePanel },
   setup() {
     const activeTab = ref('explore')
     const stats = ref(null)
@@ -110,6 +119,7 @@ export default {
     watch(activeTab, () => { showAIPanel.value = false })
 
     const tabs = [
+      { id: 'guide', label: '快速开始', icon: '🚀' },
       { id: 'explore', label: '知识库总览', icon: '🏠' },
       { id: 'browse', label: '浏览 Wiki', icon: '📚' },
       { id: 'synthesize', label: '综合提炼', icon: '🔬' },
@@ -119,8 +129,24 @@ export default {
     ]
 
     onMounted(async () => {
-      stats.value = await api.stats()
+      try {
+        stats.value = await api.stats()
+      } catch (e) { /* 后端未就绪时保持默认页 */ }
+      // 未配置 API Key → 一律落在引导页；其次知识库为空也落引导页
+      let hasKey = true
+      try {
+        const cfg = await api.getConfig()
+        hasKey = !!cfg.api_key_set
+      } catch (e) { /* 忽略 */ }
+      if (!hasKey || (stats.value && !stats.value.total_pages)) {
+        activeTab.value = 'guide'
+      }
     })
+
+    async function onConfigured() {
+      stats.value = await api.stats()
+      refreshKey.value++
+    }
 
     async function onSynthesizeDone() {
       stats.value = await api.stats()
@@ -156,7 +182,7 @@ export default {
       return '质量良好'
     })
 
-    return { activeTab, tabs, stats, refreshKey, currentProject, showAIPanel, lintStatusClass, lintStatusText, onSynthesizeDone, onIngestDone, onLintDone, onProjectSelect }
+    return { activeTab, tabs, stats, refreshKey, currentProject, showAIPanel, lintStatusClass, lintStatusText, onSynthesizeDone, onIngestDone, onLintDone, onProjectSelect, onConfigured }
   },
 }
 </script>

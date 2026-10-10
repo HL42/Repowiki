@@ -40,6 +40,26 @@ export default {
     if (subProject) body.sub_project = subProject
     return request('/api/ingest/validate', body)
   },
+  // 配置（API Key）读写，支撑首次启动在网页里填 Key
+  async getConfig() {
+    const resp = await fetch('/api/config')
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`)
+    return data
+  },
+  async setConfig(apiKey, model) {
+    const body = { api_key: apiKey }
+    if (model) body.model = model
+    return request('/api/config', body)
+  },
+  // 浏览本机目录（服务只监听 127.0.0.1，供「导入文档」选择文件夹用）
+  async browseDir(path) {
+    const url = path ? `/api/browse-dir?path=${encodeURIComponent(path)}` : '/api/browse-dir'
+    const resp = await fetch(url)
+    const data = await resp.json().catch(() => ({}))
+    if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`)
+    return data
+  },
   stats(project) {
     const url = project ? `/api/stats?project=${encodeURIComponent(project)}` : '/api/stats'
     return request(url)

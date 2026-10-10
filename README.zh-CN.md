@@ -18,23 +18,39 @@
 
 ### 下载安装包
 
-从 [Releases](https://github.com/HL42/Repowiki/releases) 下载对应平台的安装包：
+从 [Releases](https://github.com/HL42/Repowiki/releases) 下载对应平台的安装包（`v0.1.0` 为例）：
 
-- **macOS Apple Silicon**：`repowiki-{version}-darwin-arm64.zip`
-- **macOS Intel**：`repowiki-{version}-darwin-amd64.zip`
-- **Windows**：`repowiki-{version}-windows-amd64.zip`
+- **macOS Apple Silicon**：`RepoWiki-v0.1.0-arm64.dmg`
+- **macOS Intel**：`RepoWiki-v0.1.0-amd64.dmg`
+- **Windows x64**：`repowiki-v0.1.0-windows-amd64.zip`
 
-解压后双击 `start.command`（Mac）或 `start.bat`（Windows），首次运行输入 [DeepSeek API Key](https://platform.deepseek.com)，浏览器自动打开。
+**安装步骤**
+
+- **macOS**：双击 `.dmg` 打开安装盘 → 把 `RepoWiki.app` 拖进「应用程序」→ 双击打开，出现**独立的软件窗口**（不借道浏览器）；
+- **Windows**：解压 `zip` → 双击 `repowiki.exe`（无控制台窗口），自动用默认浏览器打开。
+
+打开后左侧「快速开始」有分步引导；**第一次使用时直接在界面里粘贴 [DeepSeek API Key](https://platform.deepseek.com/api_keys) 并保存**，即填即校验、无需碰终端。端口被占用时会自动改用空闲端口，地址始终正确。
+
+想先试手感，可在「导入文档」里直接导入包内自带的示例项目 `examples/order-service`。
+
+> **macOS 提示「无法验证开发者」？** 安装包未做代码签名（Apple 签名需付费账号）。首次打开 `RepoWiki.app` 时：**右键 → 打开 → 确认**即可。
+>
+> **Windows 提示 SmartScreen 已阻止？** 点「更多信息」→「仍要运行」。
+
+程序**只监听 `127.0.0.1`**，不会暴露到局域网或公网；同时校验请求的 Host 与 Origin，拒绝非本机来源的跨站请求（否则浏览器里任意网页都能读到本机磁盘）。API Key 与知识库数据保存在本机用户数据目录（macOS `~/Library/Application Support/RepoWiki`、Windows `%APPDATA%\RepoWiki`）。
 
 ### 从源码
 
 ```bash
 git clone https://github.com/HL42/Repowiki.git
 cd Repowiki
-echo 'DEEPSEEK_API_KEY=sk-your-key' > .env
+echo 'DEEPSEEK_API_KEY=sk-your-key' > .env   # 或留空，启动后在浏览器引导页填写
 go build -o repowiki ./cmd/... && ./repowiki
-# 打开 http://localhost:8080
+# 自动打开 http://127.0.0.1:8080
 ```
+
+自带的前端产物若不存在，先构建一次：`cd frontend && npm install && npm run build`。
+`./repowiki --version` 可查看版本，`./repowiki --help` 查看命令行用法，`./repowiki --no-open` 启动但不自动开浏览器。
 
 ## 功能
 

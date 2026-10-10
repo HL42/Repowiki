@@ -55,10 +55,10 @@ type meiliSearchRequest struct {
 // meiliSearchResponse Meilisearch 搜索响应
 type meiliSearchResponse struct {
 	Hits []struct {
-		Source        string  `json:"source"`
-		Title         string  `json:"title"`
-		Content       string  `json:"content"`
-		RankingScore  float64 `json:"_rankingScore"`
+		Source       string  `json:"source"`
+		Title        string  `json:"title"`
+		Content      string  `json:"content"`
+		RankingScore float64 `json:"_rankingScore"`
 	} `json:"hits"`
 }
 

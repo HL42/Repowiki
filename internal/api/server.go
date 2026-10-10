@@ -3,11 +3,14 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"repowiki/internal/llm"
 	"repowiki/internal/wiki"
 )
 
@@ -17,22 +20,35 @@ type Server struct {
 	FrontendDir string
 }
 
-func NewServer(engine *wiki.Engine) *Server {
+// NewServer 装配 HTTP 服务。
+// resourceDir 是打包资源的根目录（含 frontend/），由 config.ResourceDir() 提供，
+// 支持 .app / 扁平 zip / 源码三种形态；llmClient 与 saveConfig 供运行期改 Key 用。
+func NewServer(engine *wiki.Engine, llmClient *llm.DeepSeekClient, saveConfig func(apiKey, model string) error, resourceDir string) *Server {
 	s := &Server{Engine: engine}
+	configHandler := NewConfigHandler(llmClient, saveConfig)
 	s.Handlers = map[string]http.HandlerFunc{
-		"POST /api/ingest":           cors(NewIngestHandler(engine).HandleIngest),
+		"POST /api/ingest":          cors(NewIngestHandler(engine).HandleIngest),
 		"POST /api/ingest/validate": cors(NewIngestHandler(engine).HandleValidate),
-		"POST /api/query":       cors(NewQueryHandler(engine).HandleQuery),
-		"POST /api/synthesize":  cors(NewSynthesizeHandler(engine).HandleSynthesize),
-		"GET /api/stats":        cors(NewStatsHandler(engine).HandleStats),
-		"GET /api/lint":         cors(s.handleLint),
-		"POST /api/projects":    cors(s.handleCreateProject),
-		"GET /api/projects":     cors(s.handleListProjects),
-		"GET /api/sub-projects":  cors(s.handleListSubProjects),
-		"GET /api/project/":     cors(s.handleGetProject),
+		"POST /api/query":           cors(NewQueryHandler(engine).HandleQuery),
+		"POST /api/synthesize":      cors(NewSynthesizeHandler(engine).HandleSynthesize),
+		"GET /api/stats":            cors(NewStatsHandler(engine).HandleStats),
+		"GET /api/lint":             cors(s.handleLint),
+		"GET /api/browse-dir":       cors(s.handleBrowseDir),
+		"GET /api/config":           cors(configHandler.HandleGet),
+		"POST /api/config":          cors(configHandler.HandleSet),
+		"POST /api/projects":        cors(s.handleCreateProject),
+		"GET /api/projects":         cors(s.handleListProjects),
+		"GET /api/sub-projects":     cors(s.handleListSubProjects),
+		"GET /api/project/":         cors(s.handleGetProject),
 	}
 
-	for _, dir := range []string{"./frontend/dist", "frontend/dist"} {
+	// 打包形态下资源在可执行文件附近，先按 resourceDir 定位，再回退到 CWD 相对路径
+	dirs := []string{}
+	if resourceDir != "" {
+		dirs = append(dirs, filepath.Join(resourceDir, "frontend", "dist"))
+	}
+	dirs = append(dirs, "./frontend/dist", "frontend/dist")
+	for _, dir := range dirs {
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
 			s.FrontendDir = dir
 			break
@@ -45,6 +61,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	key := r.Method + " " + r.URL.Path
 	if handler, ok := s.Handlers[key]; ok {
 		handler(w, r)
+		return
+	}
+
+	// CORS 预检：浏览器跨源发 JSON POST 前会先发 OPTIONS，而路由表按
+	// 「方法 + 路径」精确匹配，OPTIONS 不会命中任何条目。统一在这里交给
+	// cors 处理（它同样会拦掉非本机来源），否则前端另起端口调试时预检会 404。
+	if r.Method == http.MethodOptions && strings.HasPrefix(r.URL.Path, "/api/") {
+		cors(func(http.ResponseWriter, *http.Request) {})(w, r)
 		return
 	}
 
@@ -214,6 +238,9 @@ func (s *Server) handleWikiPageDelete(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	// 缓存在根引擎上，必须在这里清，否则被删的页重启前仍会被检索到
+	s.Engine.InvalidateCaches()
+
 	writeJSON(w, map[string]string{"deleted": filepath.Base(name)})
 }
 
@@ -319,19 +346,72 @@ func safeWikiPagePath(root, category, name string) (string, error) {
 	return fullPath, nil
 }
 
-// cors 包装器
+// cors 包装器：只放行本机来源，并做 Host 校验。
+//
+// 「只监听 127.0.0.1」本身并不足以保护这些接口：
+//   - 用户浏览器里任意一个网页都能向 http://127.0.0.1:<port> 发请求。若响应
+//     带着 Access-Control-Allow-Origin: *，对方就能读到结果——而本服务的
+//     /api/browse-dir 会列出本机磁盘，/api/ingest + /api/query 还能把指定
+//     路径下的文件内容读出来。这等于给每个访问过的网页开了个本地文件读取口。
+//   - DNS rebinding 可以让恶意域名解析到 127.0.0.1，从而绕过端口层面的隔离，
+//     因此除了 Origin 还要校验 Host。
+//
+// 内置 Web UI 与后端同源，本就不需要 CORS 头；这里回显回环 Origin 是为了
+// 保留 Vite 开发服务器（另起端口、走代理）的调试体验。
 func cors(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		if !isLoopbackHost(r.Host) {
+			writeJSONError(w, http.StatusForbidden, "仅允许本机访问")
+			return
+		}
+
+		if origin := r.Header.Get("Origin"); origin != "" {
+			if !isLoopbackOrigin(origin) {
+				writeJSONError(w, http.StatusForbidden, "仅允许本机来源访问")
+				return
+			}
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(204)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next(w, r)
 	}
+}
+
+// isLoopbackHost 判断 host（可带端口）是否指向本机回环地址。
+// 无法解析为 IP 时只认 localhost，避免把随意的域名当成合法 Host。
+func isLoopbackHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if host == "" {
+		return false
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+// isLoopbackOrigin 判断 Origin 请求头是否来自本机。
+// 解析失败的（含 "null"）一律拒绝。
+func isLoopbackOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return isLoopbackHost(u.Host)
 }
 
 // JSON

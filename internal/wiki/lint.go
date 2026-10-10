@@ -17,17 +17,17 @@ type LintIssue struct {
 	Issue      string `json:"issue"`
 	Severity   string `json:"severity"` // "error", "warning", "info"
 	Size       int64  `json:"size"`
-	Project    string `json:"project,omitempty"`    // 所属项目（空=全局）
+	Project    string `json:"project,omitempty"`     // 所属项目（空=全局）
 	SubProject string `json:"sub_project,omitempty"` // 所属子项目（空=项目级或全局）
 }
 
 type LintReport struct {
-	TotalPages  int         `json:"total_pages"`
-	Issues      []LintIssue `json:"issues"`
-	ErrorCount  int         `json:"error_count"`
-	WarnCount   int         `json:"warn_count"`
-	InfoCount   int         `json:"info_count"`
-	CleanCount  int         `json:"clean_count"`
+	TotalPages int         `json:"total_pages"`
+	Issues     []LintIssue `json:"issues"`
+	ErrorCount int         `json:"error_count"`
+	WarnCount  int         `json:"warn_count"`
+	InfoCount  int         `json:"info_count"`
+	CleanCount int         `json:"clean_count"`
 }
 
 // lintAll 扫描所有 wiki 页面（全局 + 所有项目），返回质量问题报告
@@ -182,6 +182,7 @@ func (e *Engine) lintStaleSources(wikiDir, rootDir, project, subProject string) 
 // 子项目场景下，raw 文件名是原始的（如 App.vue），但 wiki 文件名有各种后缀格式：
 //   - {原名}-—-{sub}.md        (yl-delivery-service 风格)
 //   - code-{原名}---{描述}.md   (含 code- 前缀和中文描述)
+//
 // 此函数返回能被 DeletePage 正确处理的文件名（优先返回 .md 文件）
 func resolveWikiSourceName(sourcesDir, rawName string) string {
 	// 精确匹配：wiki 中存在同名 .md 文件
@@ -531,7 +532,7 @@ func (e *Engine) DeletePage(category, name string) error {
 // cleanupAfterDelete 删除后的清理工作：重建索引、清除缓存、移除搜索条目
 func (e *Engine) cleanupAfterDelete(category string, filePath string) {
 	e.regenerateIndex()
-	e.invalidateCaches()
+	e.InvalidateCaches()
 	if category == "sources" {
 		e.Searcher.Remove(filePath)
 	}
@@ -606,7 +607,7 @@ func (e *Engine) ingestOneFromContent(name, content string) error {
 		_ = e.accumulateConceptPage(ctx, concept, sourceSlug, meta.KeyFacts)
 	}
 	e.regenerateIndex()
-	e.invalidateCaches()
+	e.InvalidateCaches()
 	return nil
 }
 

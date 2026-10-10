@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 )
@@ -53,6 +54,7 @@ type SynthesisResult struct {
 
 // 客户端
 type DeepSeekClient struct {
+	mu      sync.RWMutex
 	BaseURL string
 	APIKey  string
 	Model   string
@@ -71,6 +73,60 @@ func NewDeepSeekClient(apiKey, model string) *DeepSeekClient {
 		Model:   model,
 		Client:  &http.Client{Timeout: 120 * time.Second},
 	}
+}
+
+// Configure 运行期更新 API Key 与模型（首次启动后在网页里填写时调用）。
+// 所有项目/子项目引擎共享同一个客户端指针，这里改一处即全局生效。
+func (c *DeepSeekClient) Configure(apiKey, model string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if apiKey != "" {
+		c.APIKey = apiKey
+	}
+	if model != "" {
+		c.Model = model
+	}
+}
+
+// Config 返回当前配置状态（不暴露完整密钥）。
+func (c *DeepSeekClient) Config() (apiKeySet bool, maskedKey, model string) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.APIKey != "", MaskKey(c.APIKey), c.Model
+}
+
+// MaskKey 隐藏密钥中间部分，用于展示。
+func MaskKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	if len(key) <= 8 {
+		return "已设置"
+	}
+	return key[:4] + "****" + key[len(key)-4:]
+}
+
+// ValidateKey 用给定 key 请求一次 /models 验证有效性（不写入任何状态）。
+// 仅在服务端明确返回 401/403 时判定无效；网络错误等视为「暂无法验证」，返回 nil 放行。
+func (c *DeepSeekClient) ValidateKey(ctx context.Context, apiKey string) error {
+	validateClient := &http.Client{Timeout: 8 * time.Second}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"/models", nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := validateClient.Do(req)
+	if err != nil {
+		return nil // 网络不通：不阻塞用户保存，稍后真正调用时再报错
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("API Key 无效（服务端返回 %d），请检查后重试", resp.StatusCode)
+	}
+	return nil
 }
 
 // Chat
@@ -110,8 +166,13 @@ func (c *DeepSeekClient) Chat(ctx context.Context, messages []Message) (string, 
 }
 
 func (c *DeepSeekClient) doChat(ctx context.Context, messages []Message) (string, error) {
+	c.mu.RLock()
+	model := c.Model
+	apiKey := c.APIKey
+	c.mu.RUnlock()
+
 	reqbody := chatRequest{
-		Model:       c.Model,
+		Model:       model,
 		Messages:    messages,
 		Temperature: 0.3,
 	}
@@ -126,7 +187,7 @@ func (c *DeepSeekClient) doChat(ctx context.Context, messages []Message) (string
 		return "", fmt.Errorf("创建请求失败: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := c.Client.Do(req)
 	if err != nil {
